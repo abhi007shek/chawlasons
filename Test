@@ -1,0 +1,142 @@
+import NewPaymentModal from '../newPaymentModal';
+import { JestElement } from 'jest/lwc';
+import { removeAllElements, flushPromises } from 'jest/util';
+import { ShowToastEventName } from 'lightning/platformShowToastEvent';
+
+class Component extends JestElement {
+
+    constructor() {
+        super( 'c-new-payment-modal', NewPaymentModal );
+    }
+
+    get modalSection() {
+        return this.querySelector( 'section' );
+    }
+
+    get spinner() {
+        return this.querySelector( 'lightning-spinner' );
+    }
+
+    get form() {
+        return this.querySelector( 'lightning-record-edit-form' );
+    }
+}
+
+describe( 'c-new-payment-modal', () => {
+
+    afterEach( removeAllElements );
+
+    describe( 'visibility', () => {
+
+        function visibilityTest( shouldBeVisible ) {
+            const component = new Component();
+            component.connectToDOM();
+            
+            if ( shouldBeVisible ) {
+                component.element.showModalForm();
+            } else {
+                component.element.closeModal();
+            }
+    
+            return flushPromises().then( () => {
+                const modalSection = component.modalSection;
+                expect( modalSection.classList.contains( "slds-fade-in-open" ) ).toBe( shouldBeVisible );
+                expect( modalSection.classList.contains( "slds-fade-in-close" ) ).toBe( !shouldBeVisible );
+            } );
+        }
+
+        it( 'should show modal', () => {
+            visibilityTest( true );
+        } );
+    
+        it( 'should hide modal', () => {
+            visibilityTest( false );
+        } );
+
+        it( 'should toggle spinner', () => {
+            const component = new Component();
+            component.connectToDOM();
+
+            expect( component.spinner ).not.toBeNull();
+
+            component.form.dispatchEvent( new CustomEvent( 'load' ) );
+            
+            return flushPromises().then( () => {
+                expect( component.spinner ).toBeNull();
+            } );
+        } );
+
+        it( 'should emit newpayment event when submitting new payment', () => {
+            const component = new Component();
+            component.connectToDOM();
+
+            const payment = {
+                type : 'Ad Hoc',
+                status : 'Pending',
+                amount : 200,
+                scheduledDate : new Date()
+            };
+
+            const paymentSObject = {
+                Payment_Type__c : payment.type,
+                Transaction_Status__c : payment.status, 
+                Amount__c : payment.amount,
+                Schedule_Date__c : payment.scheduledDate
+            };
+
+            const newPaymentHandler = jest.fn();
+            component.addEventListener( 'newpayment', newPaymentHandler );
+
+            const toastHandler = jest.fn();
+            component.addEventListener( ShowToastEventName, toastHandler );
+
+            const submitEvent = new CustomEvent( 'submit', { detail : { fields : paymentSObject } } )
+            component.form.dispatchEvent( submitEvent );
+
+            expect( newPaymentHandler ).toHaveBeenCalled();
+            const newPaymentEventData = newPaymentHandler.mock.calls[0][0].detail;
+
+            for ( const [ key, value ] of Object.entries( payment ) ) {
+                expect( newPaymentEventData[ key ] ).toBe( value );
+            }
+
+            expect( toastHandler ).toHaveBeenCalled();
+            expect( toastHandler.mock.calls[0][0].detail.variant ).toBe( 'success' );
+        } );
+
+        it( 'should emit newpayment with Tentative status for Proposal Simulator', () => {
+            const component = new Component();
+            component.attributes = { isProposalSimulator : true };
+            component.connectToDOM();
+
+            const payment = {
+                type : 'Ad Hoc',
+                status : 'Tentative',
+                amount : 200,
+                scheduledDate : new Date()
+            };
+
+            const paymentSObject = {
+                Payment_Type__c : payment.type,
+                Transaction_Status__c : 'Pending', 
+                Amount__c : payment.amount,
+                Schedule_Date__c : payment.scheduledDate
+            };
+
+            const handler = jest.fn();
+            component.addEventListener( 'newpayment', handler );
+
+            const submitEvent = new CustomEvent( 'submit', { detail : { fields : paymentSObject } } )
+            component.form.dispatchEvent( submitEvent );
+
+            expect( handler ).toHaveBeenCalled();
+            const eventData = handler.mock.calls[0][0].detail;
+
+            for ( const [ key, value ] of Object.entries( payment ) ) {
+                expect( eventData[ key ] ).toBe( value );
+            }
+        } );
+    } );
+} );
+
+
